@@ -1,78 +1,64 @@
-> ⚠️ **Don't click Fork!**
-> 
-> This is a GitHub Template repo. If you want to use this for a plugin, [use this template][new-repo] to make a new repo!
->
-> ![image](https://github.com/goatcorp/GlamourerPreviewManager/assets/16760685/d9732094-e1ed-4769-a70b-58ed2b92580c)
+# Glamourer Preview Manager (GPM)
 
-# GlamourerPreviewManager
+A premium companion plugin for FINAL FANTASY XIV (Dalamud) that solves native preview limitations, enabling high-quality character preview cards directly inside your **Glamourer** Design Panel!
 
-[![Use This Template badge](https://img.shields.io/badge/Use%20This%20Template-0?logo=github&labelColor=grey)][new-repo]
+---
 
+## Features
 
-Simple example plugin for Dalamud.
+- **True GUI Injection**: Renders custom preview images natively inside Glamourer's design details pane (below the action/apply buttons and above the customization list).
+- **Reflection-Based Selection**: Resolves the active selected design via runtime reflection on Glamourer's internal assembly and dependency injection container. This provides a 100% accurate source of truth for the active design and is immune to folder structures or name collisions.
+- **Stable ImGui Hooks**: Uses a custom post-draw button detour on native `cimgui.dll` calls (`igButton`) to target Glamourer's details layout reliably regardless of screen height, scrolling, or header expansion states.
+- **Vertical/Portrait Capture Support**: Specifically optimized for vertical character screenshots. Defaults to a **9:16 Aspect Ratio** (portrait), with options for 3:4, 1:1 (square), 4:3, and 16:9 aspect ratios.
+- **Cropped Screenshot Overlay**: Features a camera overlay that dims the surrounding screen, draws a sky-blue glowing crop box, and guides you to take a screenshot using `[Space]` or exit with `[Esc]`.
+- **4K & High-DPI Calibration**: Built-in settings sliders for Box Scale and X/Y offsets, allowing users on 4K or custom high-DPI displays to calibrate the capture window bounds perfectly.
+- **Auto-Apply on Screenshot**: An optional settings toggle that programmatically runs Glamourer's slash command `/glamour apply [design] | <me>` when triggering the screenshot button, instantly dressing your character before the screenshot is taken.
+- **Rediscover Previews**: A settings action that scans the previews folder, automatically strips filename suffixes (like copy counters ` (1).png`), and maps existing images back to active Glamourer designs in one click.
+- **Import Options Panel**: Supports pasting images directly from your clipboard (e.g. from ShareX/Snipping Tool), browsing local files, or taking an in-game cropped screenshot.
+- **Centralized Allocation**: Saves the mapping manifest (`allocation.json`) in the central plugin folder (keeping your preview directory clean of configuration files), with automatic migration path support.
+- **Dynamic Resizeable UI**: Fully resizeable settings window with scrollbar support and custom min-size constraints (`450x300`) to match your game client resolution.
+- **Middle-Click Zoom**: Hold **Middle-Click** over a preview image to trigger a full-screen magnifier overlay, complete with a custom Zoom Scale slider in configurations.
 
-This is not designed to be the simplest possible example, but it is also not designed to cover everything you might want to do. For more detailed questions, come ask in [the Discord](https://discord.gg/holdshift).
+---
 
-## Main Points
+## Installation
 
-* Simple functional plugin
-  * Slash command
-  * Main UI
-  * Settings UI
-  * Image loading
-  * Plugin json
-* Simple, slightly-improved plugin configuration handling
-* Project organization
-  * Copies all necessary plugin files to the output directory
-    * Does not copy dependencies that are provided by dalamud
-    * Output directory can be zipped directly and have exactly what is required
-  * Hides data files from visual studio to reduce clutter
-    * Also allows having data files in different paths than VS would usually allow if done in the IDE directly
+To install the **Glamourer Preview Manager** using my custom repository:
 
+1. Launch FINAL FANTASY XIV and open Dalamud Settings using `/xlsettings` in chat.
+2. Navigate to the **Experimental** tab.
+3. Under **Custom Plugin Repositories**, paste the following URL:
+   `https://raw.githubusercontent.com/Tomok2404/TomokPlugins/main/pluginmaster.json`
+4. Click the **`+`** button to add the repository, then click **Save and Close**.
+5. Open the Plugin Installer using `/xlplugins` in chat.
+6. Search for **Glamourer Preview Manager** and click **Install**!
 
-The intention is less that any of this is used directly in other projects, and more to show how similar things can be done.
+---
 
-## How To Use
+## Support & Community
 
-### Getting Started
+If you need help, want to report a bug, or suggest new features, join my support Discord server:
+📢 **[Join the Support Discord](https://discord.gg/PvxW4mXaWp)**
 
-To begin, [clone this template repository][new-repo] to your own GitHub account. This will automatically bring in everything you need to get a jumpstart on development. You do not need to fork this repository unless you intend to contribute modifications to it.
+---
 
-Be sure to also check out the [Dalamud Developer Docs][dalamud-docs] for helpful information about building your own plugin. The Developer Docs includes helpful information about all sorts of things, including [how to submit][submit] your newly-created plugin to the official repository. Assuming you use this template repository, the provided project build configuration and license are already chosen to make everything a breeze.
+## Developer / Building Instructions
 
-[new-repo]: https://github.com/new?template_name=GlamourerPreviewManager&template_owner=goatcorp
-[dalamud-docs]: https://dalamud.dev
-[submit]: https://dalamud.dev/plugin-publishing/submission
+If you wish to build the source code manually:
 
 ### Prerequisites
+- .NET 8.0 SDK or higher.
+- FINAL FANTASY XIV, XIVLauncher, and Dalamud installed to default directories.
 
-GlamourerPreviewManager assumes all the following prerequisites are met:
+### Steps
+1. Open the solution file `GlamourerPreviewManager.sln` in your C# IDE of choice (e.g. Visual Studio, Rider).
+2. Set configuration to `Release` and build the project.
+3. The packaged plugin `.zip` folder will be automatically generated at:
+   `GlamourerPreviewManager/bin/x64/Release/GlamourerPreviewManager/latest.zip`
 
-* XIVLauncher, FINAL FANTASY XIV, and Dalamud have all been installed and the game has been run with Dalamud at least once.
-* XIVLauncher is installed to its default directories and configurations.
-  * If a custom path is required for Dalamud's dev directory, it must be set with the `DALAMUD_HOME` environment variable.
-* A .NET Core 8 SDK has been installed and configured, or is otherwise available. (In most cases, the IDE will take care of this.)
+---
 
-### Building
+## AI Disclosure / Collaboration Note
 
-1. Open up `GlamourerPreviewManager.sln` in your C# editor of choice (likely [Visual Studio](https://visualstudio.microsoft.com) or [JetBrains Rider](https://www.jetbrains.com/rider/)).
-2. Build the solution. By default, this will build a `Debug` build, but you can switch to `Release` in your IDE.
-3. The resulting plugin can be found at `GlamourerPreviewManager/bin/x64/Debug/GlamourerPreviewManager.dll` (or `Release` if appropriate.)
-
-### Activating in-game
-
-1. Launch the game and use `/xlsettings` in chat or `xlsettings` in the Dalamud Console to open up the Dalamud settings.
-    * In here, go to `Experimental`, and add the full path to the `GlamourerPreviewManager.dll` to the list of Dev Plugin Locations.
-2. Next, use `/xlplugins` (chat) or `xlplugins` (console) to open up the Plugin Installer.
-    * In here, go to `Dev Tools > Installed Dev Plugins`, and the `GlamourerPreviewManager` should be visible. Enable it.
-3. You should now be able to use `/pmycommand` (chat) or `pmycommand` (console)!
-
-Note that you only need to add it to the Dev Plugin Locations once (Step 1); it is preserved afterwards. You can disable, enable, or load your plugin on startup through the Plugin Installer.
-
-### Reconfiguring for your own uses
-
-Replace all references to `GlamourerPreviewManager` in all the files and filenames with your desired name, then start building the plugin of your dreams. You'll figure it out 😁
-
-Dalamud will load the JSON file (by default, `GlamourerPreviewManager/GlamourerPreviewManager.json`) next to your DLL and use it for metadata, including the description for your plugin in the Plugin Installer. Make sure to update this with information relevant to _your_ plugin!
-
-All participation in this repository is governed by our [Code of Conduct](https://dalamud.dev/code-of-conduct). If you used AI tooling at any point, review the [AI Usage Policy](https://dalamud.dev/plugin-publishing/ai-policy) and disclose your level of AI use. Entirely AI-generated submissions will be rejected, and undisclosed AI use may result in a ban.
+> [!NOTE]
+> This plugin was co-authored, coded, and polished with the assistance of agentic AI coding assistants (Google DeepMind's Antigravity). All design aesthetics, custom reflection selection layers, and coordinate calibration frameworks were developed through collaborative pair programming.
