@@ -42,6 +42,13 @@ If you need help, want to report a bug, or suggest new features, join my support
 
 ---
 
+## FAQ & Troubleshooting
+
+For common questions, performance guidelines, and best practices regarding preview management, check the official FAQ:
+📖 **[Read the FAQ](https://github.com/Tomok2404/TomokPlugins/blob/main/FAQ.md)**
+
+---
+
 ## Developer / Building Instructions
 
 If you wish to build the source code manually:
