@@ -14,6 +14,7 @@ public class DesignInfo
     public Guid Identifier { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string FileSystemFolder { get; set; } = string.Empty;
     public string? PreviewImagePath { get; set; }
     public bool HasPreview => !string.IsNullOrEmpty(PreviewImagePath);
 }
@@ -277,7 +278,8 @@ public class DesignManager : IDisposable
                 {
                     Identifier = id,
                     Name = obj.Value<string>("Name") ?? "Unnamed Design",
-                    Description = obj.Value<string>("Description") ?? string.Empty
+                    Description = obj.Value<string>("Description") ?? string.Empty,
+                    FileSystemFolder = obj.Value<string>("FileSystemFolder") ?? string.Empty
                 };
             }
         }

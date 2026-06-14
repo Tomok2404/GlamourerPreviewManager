@@ -20,7 +20,6 @@ public class Configuration : IPluginConfiguration
 
     public string PreviewsFolderPath { get; set; } = string.Empty;
     public CropAspect CropOption { get; set; } = CropAspect.Aspect9_16;
-    public bool AutoSyncSelection { get; set; } = true;
     public int PreviewImageSizePercent { get; set; } = 100;
     
     // Screenshot settings
@@ -29,6 +28,17 @@ public class Configuration : IPluginConfiguration
     public int ScreenshotOffsetY { get; set; } = 0;
     public bool AutoApplyOnScreenshot { get; set; } = false;
     public float ZoomScale { get; set; } = 1.0f;
+
+    public bool GalleryShowOnlyWithPreviews { get; set; } = true;
+    public float GalleryCardWidth { get; set; } = 150f;
+    public bool HasSeenGalleryNotification { get; set; } = false;
+    public CropAspect GalleryCardAspect { get; set; } = CropAspect.Aspect9_16;
+    public bool GalleryCardContainImage { get; set; } = false;
+
+    // Screenshot watcher settings
+    public string GameScreenshotFolderPath { get; set; } = string.Empty;
+    public bool AutoImportFromWatchedFolder { get; set; } = true;
+    public bool AutoDeleteWatchedScreenshot { get; set; } = false;
 
     // The below exists just to make saving less cumbersome
     public void Save()

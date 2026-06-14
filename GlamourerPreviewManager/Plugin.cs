@@ -34,10 +34,14 @@ public sealed class Plugin : IDalamudPlugin
 
     private const string CommandName = "/gpm";
     private const string AltCommandName = "/glampreview";
+    private const string GalleryCommandName = "/gpmgallery";
+    private const string AltGalleryCommandName = "/glampreviewgallery";
 
     public Configuration Configuration { get; init; }
     public readonly WindowSystem WindowSystem = new("GlamourerPreviewManager");
     private ConfigWindow ConfigWindow { get; init; }
+    private GalleryWindow GalleryWindow { get; init; }
+    private GalleryPromoWindow GalleryPromoWindow { get; init; }
     public FileDialogManager FileDialogManager { get; } = new();
     internal ImGuiHookManager ImGuiHookManager { get; }
     public DesignManager DesignManager { get; }
@@ -71,6 +75,10 @@ public sealed class Plugin : IDalamudPlugin
     private int screenshotDelayFrame = -1;
     private bool lastSpaceDown = false;
     private bool lastEscapeDown = false;
+    public System.Drawing.Bitmap? LastRawScreenshot { get; private set; }
+    public Guid LastScreenshotDesignId { get; private set; } = Guid.Empty;
+    private FileSystemWatcher? screenshotWatcher;
+    private string? pendingScreenshotPath;
 
     // Deferred UI rendering states
     private int lastDrawnGpmFrame = -1;
@@ -87,10 +95,14 @@ public sealed class Plugin : IDalamudPlugin
         DesignManager.Initialize();
 
         ConfigWindow = new ConfigWindow(this);
+        GalleryWindow = new GalleryWindow(this);
+        GalleryPromoWindow = new GalleryPromoWindow(this);
         ImGuiHookManager = new ImGuiHookManager(this);
         ImGuiHookManager.Initialize();
 
         WindowSystem.AddWindow(ConfigWindow);
+        WindowSystem.AddWindow(GalleryWindow);
+        WindowSystem.AddWindow(GalleryPromoWindow);
 
         var commandInfo = new CommandInfo(OnCommand)
         {
@@ -98,6 +110,13 @@ public sealed class Plugin : IDalamudPlugin
         };
         CommandManager.AddHandler(CommandName, commandInfo);
         CommandManager.AddHandler(AltCommandName, commandInfo);
+
+        var galleryCommandInfo = new CommandInfo(OnGalleryCommand)
+        {
+            HelpMessage = "Open the Glamourer Preview Manager Gallery"
+        };
+        CommandManager.AddHandler(GalleryCommandName, galleryCommandInfo);
+        CommandManager.AddHandler(AltGalleryCommandName, galleryCommandInfo);
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.Draw += DrawFileDialog;
@@ -107,6 +126,23 @@ public sealed class Plugin : IDalamudPlugin
         
         PluginInterface.UiBuilder.DisableGposeUiHide = true;
 
+        // Auto-detect default game screenshot folder if empty
+        if (string.IsNullOrEmpty(Configuration.GameScreenshotFolderPath))
+        {
+            try
+            {
+                var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games", "FINAL FANTASY XIV - A Realm Reborn", "screenshots");
+                if (Directory.Exists(defaultPath))
+                {
+                    Configuration.GameScreenshotFolderPath = defaultPath;
+                    Configuration.Save();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug($"Failed to detect default FFXIV screenshot directory: {ex.Message}");
+            }
+        }
         CheckFirstStartup();
     }
 
@@ -124,9 +160,15 @@ public sealed class Plugin : IDalamudPlugin
         ImGuiHookManager.Dispose();
         DesignManager.Dispose();
         ConfigWindow.Dispose();
+        GalleryWindow.Dispose();
+        GalleryPromoWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(AltCommandName);
+        CommandManager.RemoveHandler(GalleryCommandName);
+        CommandManager.RemoveHandler(AltGalleryCommandName);
+        LastRawScreenshot?.Dispose();
+        screenshotWatcher?.Dispose();
         ClearTempCache();
     }
 
@@ -135,7 +177,13 @@ public sealed class Plugin : IDalamudPlugin
         ToggleConfigUi();
     }
 
+    private void OnGalleryCommand(string command, string args)
+    {
+        ToggleGalleryUi();
+    }
+
     public void ToggleConfigUi() => ConfigWindow.Toggle();
+    public void ToggleGalleryUi() => GalleryWindow.Toggle();
     private void DrawFileDialog() => FileDialogManager.Draw();
 
     public void OnBeginWindow(string name)
@@ -671,8 +719,7 @@ public sealed class Plugin : IDalamudPlugin
                 {
                     CommandManager.ProcessCommand($"/glamour apply {designId} | <me>");
                 }
-                isCapturingScreenshot = true;
-                screenshotDelayFrame = -1;
+                SetScreenshotCaptureActive(true);
             }
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("Take a cropped screenshot from the center of the screen.");
         }
@@ -686,13 +733,22 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!isCapturingScreenshot) return;
 
+        if (!string.IsNullOrEmpty(pendingScreenshotPath))
+        {
+            var pathToProcess = pendingScreenshotPath;
+            pendingScreenshotPath = null;
+            SetScreenshotCaptureActive(false);
+            ProcessAutoImportedScreenshot(pathToProcess);
+            return;
+        }
+
         if (screenshotDelayFrame > 0)
         {
             screenshotDelayFrame--;
             if (screenshotDelayFrame == 0)
             {
                 DoCaptureScreenshot();
-                isCapturingScreenshot = false;
+                SetScreenshotCaptureActive(false);
             }
             return;
         }
@@ -746,7 +802,9 @@ public sealed class Plugin : IDalamudPlugin
         drawList.AddRect(min, max, ImGui.GetColorU32(new Vector4(0.3f, 0.8f, 1f, 0.9f)), 0f, ImDrawFlags.None, 2f);
 
         // Draw HUD message badge
-        var text = "Screenshot Mode - [Space] Capture | [Esc] Cancel";
+        var text = Configuration.AutoImportFromWatchedFolder && !string.IsNullOrEmpty(Configuration.GameScreenshotFolderPath)
+            ? "Screenshot Mode - [Space] Capture Screen | Or take a Game/ReShade screenshot to auto-crop! | [Esc] Cancel"
+            : "Screenshot Mode - [Space] Capture Screen | [Esc] Cancel";
         var textSize = ImGui.CalcTextSize(text);
         var textPos = new Vector2(center.X - textSize.X / 2f, max.Y + 20f);
 
@@ -769,7 +827,42 @@ public sealed class Plugin : IDalamudPlugin
         }
         else if (escapePressed)
         {
-            isCapturingScreenshot = false;
+            SetScreenshotCaptureActive(false);
+        }
+    }
+
+    public void SetScreenshotCaptureActive(bool active)
+    {
+        if (isCapturingScreenshot == active) return;
+
+        isCapturingScreenshot = active;
+        if (active)
+        {
+            screenshotDelayFrame = -1;
+            UpdateScreenshotWatcher();
+        }
+        else
+        {
+            StopScreenshotWatcher();
+        }
+    }
+
+    public void StopScreenshotWatcher()
+    {
+        try
+        {
+            if (screenshotWatcher != null)
+            {
+                screenshotWatcher.EnableRaisingEvents = false;
+                screenshotWatcher.Created -= OnScreenshotCreated;
+                screenshotWatcher.Dispose();
+                screenshotWatcher = null;
+                Log.Information("GPM screenshot watcher stopped and disposed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"Error stopping screenshot watcher: {ex.Message}");
         }
     }
 
@@ -942,11 +1035,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void CheckFirstStartup()
     {
-        if (string.IsNullOrEmpty(Configuration.PreviewsFolderPath))
+        if (string.IsNullOrEmpty(Configuration.PreviewsFolderPath) || !Configuration.HasSeenGalleryNotification)
         {
             if (ClientState.IsLoggedIn)
             {
-                NotifyFirstStartup();
+                TriggerStartupPopups();
             }
             else
             {
@@ -958,7 +1051,19 @@ public sealed class Plugin : IDalamudPlugin
     private void OnLogin()
     {
         ClientState.Login -= OnLogin;
-        NotifyFirstStartup();
+        TriggerStartupPopups();
+    }
+
+    private void TriggerStartupPopups()
+    {
+        if (string.IsNullOrEmpty(Configuration.PreviewsFolderPath))
+        {
+            NotifyFirstStartup();
+        }
+        else if (!Configuration.HasSeenGalleryNotification)
+        {
+            GalleryPromoWindow.IsOpen = true;
+        }
     }
 
     private void NotifyFirstStartup()
@@ -1046,6 +1151,180 @@ public sealed class Plugin : IDalamudPlugin
         catch (Exception ex)
         {
             Log.Debug($"Failed to clear temporary cache: {ex.Message}");
+        }
+    }
+
+    public void UpdateScreenshotWatcher()
+    {
+        try
+        {
+            screenshotWatcher?.Dispose();
+            screenshotWatcher = null;
+
+            var path = Configuration.GameScreenshotFolderPath;
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path) || !Configuration.AutoImportFromWatchedFolder)
+            {
+                return;
+            }
+
+            screenshotWatcher = new FileSystemWatcher
+            {
+                Path = path,
+                Filter = "*.*",
+                EnableRaisingEvents = true
+            };
+
+            screenshotWatcher.Created += OnScreenshotCreated;
+            Log.Information($"GPM screenshot watcher initialized for directory: {path}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Failed to initialize screenshot watcher: {ex.Message}");
+        }
+    }
+
+    private void OnScreenshotCreated(object sender, FileSystemEventArgs e)
+    {
+        if (!isCapturingScreenshot || activeSelectedDesignId == Guid.Empty) return;
+
+        var ext = Path.GetExtension(e.FullPath).ToLower();
+        if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp" && ext != ".bmp" && ext != ".gif")
+        {
+            return;
+        }
+
+        // Wait for game or ReShade to finish writing the file
+        Task.Run(async () =>
+        {
+            string filePath = e.FullPath;
+            bool accessible = false;
+            int attempts = 30; // Wait up to 3 seconds
+            while (attempts > 0)
+            {
+                try
+                {
+                    using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    {
+                        accessible = true;
+                    }
+                    break;
+                }
+                catch (IOException)
+                {
+                    attempts--;
+                    await Task.Delay(100);
+                }
+                catch (Exception)
+                {
+                    break;
+                }
+            }
+
+            if (accessible)
+            {
+                pendingScreenshotPath = filePath;
+            }
+            else
+            {
+                Log.Warning($"Could not access newly created screenshot at {filePath} after multiple retries.");
+            }
+        });
+    }
+
+    private void ProcessAutoImportedScreenshot(string filePath)
+    {
+        try
+        {
+            if (activeSelectedDesignId == Guid.Empty) return;
+
+            var viewport = ImGuiHelpers.MainViewport;
+            var pos = viewport.Pos;
+            var size = viewport.Size;
+            var center = pos + size / 2f;
+
+            float boxWidth = 500f;
+            float boxHeight = 500f;
+
+            if (Configuration.CropOption == CropAspect.Aspect16_9)
+            {
+                boxWidth = 640f;
+                boxHeight = 360f;
+            }
+            else if (Configuration.CropOption == CropAspect.Aspect4_3)
+            {
+                boxWidth = 533f;
+                boxHeight = 400f;
+            }
+            else if (Configuration.CropOption == CropAspect.Aspect9_16)
+            {
+                boxWidth = 360f;
+                boxHeight = 640f;
+            }
+            else if (Configuration.CropOption == CropAspect.Aspect3_4)
+            {
+                boxWidth = 450f;
+                boxHeight = 600f;
+            }
+
+            // Apply custom screenshot configurations
+            boxWidth *= Configuration.ScreenshotScale;
+            boxHeight *= Configuration.ScreenshotScale;
+            center.X += Configuration.ScreenshotOffsetX;
+            center.Y += Configuration.ScreenshotOffsetY;
+
+            float relativeX = (center.X - boxWidth / 2f) - pos.X;
+            float relativeY = (center.Y - boxHeight / 2f) - pos.Y;
+
+            using (var originalImg = System.Drawing.Image.FromFile(filePath))
+            {
+                double scaleX = (double)originalImg.Width / size.X;
+                double scaleY = (double)originalImg.Height / size.Y;
+
+                int cropX = (int)Math.Round(relativeX * scaleX);
+                int cropY = (int)Math.Round(relativeY * scaleY);
+                int cropW = (int)Math.Round(boxWidth * scaleX);
+                int cropH = (int)Math.Round(boxHeight * scaleY);
+
+                cropX = Math.Max(0, Math.Min(cropX, originalImg.Width - 1));
+                cropY = Math.Max(0, Math.Min(cropY, originalImg.Height - 1));
+                cropW = Math.Max(1, Math.Min(cropW, originalImg.Width - cropX));
+                cropH = Math.Max(1, Math.Min(cropH, originalImg.Height - cropY));
+
+                using (var croppedBmp = new System.Drawing.Bitmap(cropW, cropH))
+                {
+                    using (var g = System.Drawing.Graphics.FromImage(croppedBmp))
+                    {
+                        g.DrawImage(originalImg, 
+                            new System.Drawing.Rectangle(0, 0, cropW, cropH), 
+                            new System.Drawing.Rectangle(cropX, cropY, cropW, cropH), 
+                            System.Drawing.GraphicsUnit.Pixel);
+                    }
+
+                    DesignManager.SaveImageDirect(activeSelectedDesignId, croppedBmp);
+                    ChatGui.Print($"[GPM] Cropped and imported screenshot from: {Path.GetFileName(filePath)}");
+                }
+            }
+
+            if (Configuration.AutoDeleteWatchedScreenshot)
+            {
+                try
+                {
+                    if (File.Exists(filePath))
+                    {
+                        File.Delete(filePath);
+                        Log.Information($"Deleted original watched screenshot: {filePath}");
+                    }
+                }
+                catch (Exception deleteEx)
+                {
+                    Log.Warning($"Failed to delete original watched screenshot {filePath}: {deleteEx.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Failed to process auto-imported screenshot: {ex}");
+            ChatGui.PrintError("Failed to crop the imported screenshot. See logs for details.");
         }
     }
 }

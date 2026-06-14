@@ -20,7 +20,7 @@ public class ConfigWindow : Window, IDisposable
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(450, 300),
+            MinimumSize = new Vector2(450, 320),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
@@ -34,6 +34,35 @@ public class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
+        if (ImGui.BeginTabBar("GPM_ConfigTabBar"))
+        {
+            if (ImGui.BeginTabItem("Previews & Storage##GPM_StorageTab"))
+            {
+                DrawStorageTab();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Display & UI##GPM_DisplayTab"))
+            {
+                DrawDisplayTab();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Screenshot Capture##GPM_ScreenshotTab"))
+            {
+                DrawScreenshotTab();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Information##GPM_InfoTab"))
+            {
+                DrawInfoTab();
+                ImGui.EndTabItem();
+            }
+            ImGui.EndTabBar();
+        }
+    }
+
+    private void DrawStorageTab()
+    {
+        ImGui.Spacing();
         ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Storage Folder Configuration");
         ImGui.Separator();
         ImGui.Spacing();
@@ -77,16 +106,17 @@ public class ConfigWindow : Window, IDisposable
                           "- Do NOT choose a folder inside your Penumbra mod directory, FFXIV game directory, or the synchronizer/Mare sync-ram folders.\n" +
                           "- Preview images will be named according to design names, and GPM will automatically rename or delete them when designs are updated or removed.");
         ImGui.PopStyleColor();
-
         ImGui.Spacing();
+    }
+
+    private void DrawDisplayTab()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Display & Image Viewer Options");
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Display & Crop Options");
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        ImGui.TextUnformatted("Preview Image Size:");
+        ImGui.TextUnformatted("Preview Image Size (in Glamourer window):");
         ImGui.SameLine();
         ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), $"{configuration.PreviewImageSizePercent}%");
 
@@ -112,8 +142,52 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextUnformatted("Screenshot/Import Crop Method:");
+        ImGui.TextUnformatted("Gallery Card Aspect Ratio:");
         
+        var cropNames = new[] { 
+            "No Crop (Preserve Aspect)", 
+            "16:9 Aspect Ratio", 
+            "1:1 Aspect Ratio (Square)", 
+            "4:3 Aspect Ratio",
+            "9:16 Aspect Ratio (Vertical/Portrait)",
+            "3:4 Aspect Ratio (Vertical)"
+        };
+        int cardAspectIndex = (int)configuration.GalleryCardAspect;
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.Combo("##GalleryAspectCombo", ref cardAspectIndex, cropNames, cropNames.Length))
+        {
+            configuration.GalleryCardAspect = (CropAspect)cardAspectIndex;
+            configuration.Save();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Controls the shape of the design cards drawn inside the gallery grid.");
+
+        ImGui.Spacing();
+        var containImage = configuration.GalleryCardContainImage;
+        if (ImGui.Checkbox("Fit full image without cropping (Contain)", ref containImage))
+        {
+            configuration.GalleryCardContainImage = containImage;
+            configuration.Save();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("If checked, the entire preview image is scaled to fit inside the card without any cropping (adding margins on the sides or top/bottom where needed).");
+        ImGui.Spacing();
+    }
+
+    private void DrawScreenshotTab()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "General Capture Settings");
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        var autoApply = configuration.AutoApplyOnScreenshot;
+        if (ImGui.Checkbox("Automatically apply design to yourself when taking screenshot", ref autoApply))
+        {
+            configuration.AutoApplyOnScreenshot = autoApply;
+            configuration.Save();
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Screenshot Capture Crop Ratio:");
         var cropNames = new[] { 
             "No Crop (Preserve Aspect)", 
             "16:9 Aspect Ratio", 
@@ -129,22 +203,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.CropOption = (CropAspect)cropIndex;
             configuration.Save();
         }
-
-        ImGui.Spacing();
-        var autoSync = configuration.AutoSyncSelection;
-        if (ImGui.Checkbox("Automatically sync selected design in main window", ref autoSync))
-        {
-            configuration.AutoSyncSelection = autoSync;
-            configuration.Save();
-        }
-
-        ImGui.Spacing();
-        var autoApply = configuration.AutoApplyOnScreenshot;
-        if (ImGui.Checkbox("Automatically apply design to yourself when taking screenshot", ref autoApply))
-        {
-            configuration.AutoApplyOnScreenshot = autoApply;
-            configuration.Save();
-        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Controls the aspect ratio of the screenshot overlay crop box and the cropping applied to new imports.");
 
         ImGui.Spacing();
         ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Screenshot Calibration (4k / DPI)");
@@ -179,13 +238,90 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Vertical screen center offset.");
 
         ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Use External Screenshots");
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        ImGui.TextUnformatted("Watched Game/ReShade Screenshot Folder:");
+        var screenshotFolder = configuration.GameScreenshotFolderPath;
+        ImGui.SetNextItemWidth(310f);
+        if (ImGui.InputText("##ScreenshotFolder", ref screenshotFolder, 500))
+        {
+            configuration.GameScreenshotFolderPath = screenshotFolder;
+            configuration.Save();
+            plugin.UpdateScreenshotWatcher();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Browse##GPM_BrowseScreenshotFolder"))
+        {
+            plugin.FileDialogManager.OpenFolderDialog("Select Screenshot Folder", (success, path) =>
+            {
+                if (success && Directory.Exists(path))
+                {
+                    configuration.GameScreenshotFolderPath = path;
+                    configuration.Save();
+                    plugin.UpdateScreenshotWatcher();
+                }
+            });
+        }
+        
+        var autoImport = configuration.AutoImportFromWatchedFolder;
+        if (ImGui.Checkbox("Auto-crop & import screenshots from watched folder", ref autoImport))
+        {
+            configuration.AutoImportFromWatchedFolder = autoImport;
+            configuration.Save();
+            plugin.UpdateScreenshotWatcher();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("When in GPM screenshot capture mode, taking a native FFXIV or ReShade screenshot will automatically crop and import it into GPM. This bypasses GDI capture to support perfect HDR tone-mapping and ReShade shaders.");
+
+        var autoDelete = configuration.AutoDeleteWatchedScreenshot;
+        if (ImGui.Checkbox("Auto-delete original screenshots after import", ref autoDelete))
+        {
+            configuration.AutoDeleteWatchedScreenshot = autoDelete;
+            configuration.Save();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("If checked, the original uncropped screenshot taken by the game or ReShade will be deleted from the watched folder automatically after GPM crops and imports it.");
+        ImGui.Spacing();
+    }
+
+    private void DrawInfoTab()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Glamourer Preview Manager Information");
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        ImGui.TextWrapped(
+            "Glamourer Preview Manager (GPM) is a Dalamud plugin designed to bring " +
+            "customizable preview images to FFXIV's Glamourer plugin. It links " +
+            "custom screenshots and external images directly to your designs."
+        );
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Tips:");
+        
+        ImGui.Bullet();
+        ImGui.SameLine();
+        ImGui.TextWrapped("Open the gallery grid by typing /gpmgallery in chat.");
+
+        ImGui.Bullet();
+        ImGui.SameLine();
+        ImGui.TextWrapped("Middle-click images in the editor or cards in the gallery to view full-sized previews.");
+
+        ImGui.Bullet();
+        ImGui.SameLine();
+        ImGui.TextWrapped("Use the External Screenshots feature to use ReShade or other screen capture tools - or to mitigate HDR tone mapping issues.");
+
+        ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
         ImGui.TextColored(new Vector4(0.3f, 0.8f, 1f, 1f), "Support & Community");
+        ImGui.Spacing();
         if (ImGui.Button("Join Support Discord"))
         {
             Dalamud.Utility.Util.OpenLink("https://discord.gg/PvxW4mXaWp");
         }
+        ImGui.Spacing();
     }
 }
